@@ -27,9 +27,14 @@ int main(int argc, char **argv)
     ConfigSetting config_setting;
     ReadParas(data_path+"/config/para.yaml", config_setting);
     
+    // read pcd files
     pcl::PointCloud<pcl::PointXYZ>::Ptr input_cloud(new pcl::PointCloud<pcl::PointXYZ>);
     ReadPCD(config_setting.pcd_data, input_cloud);
+    
+    // downsample input point cloud
+    down_sampling_voxel(*input_cloud, 0.05);
 
+    // sor filter
     pcl::PointCloud<pcl::PointXYZ>::Ptr input_cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
     sor_filter_noise(input_cloud, input_cloud_filtered);
     std::cout << "input_cloud SOR filtered: " << input_cloud_filtered->size() << std::endl;
@@ -40,6 +45,13 @@ int main(int argc, char **argv)
 
     std::cout << "ground_points: " << ground_points->size() << std::endl;
     std::cout << "tree_points: " << tree_points->size() << std::endl;
-    
+
+    std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> obj_cluster_points;    
+    // fec_cluster(tree_points, obj_cluster_points, config_setting);    
+    pcl_cluster(tree_points, obj_cluster_points, config_setting); 
+    std::cout << "obj_cluster_points: " << obj_cluster_points.size() << std::endl;
+
+    // pcl::io::savePCDFileBinary("/media/xiaochen/xch_disk/TreeScope_dataset/icra_challenge/development_phase/ground.pcd", *ground_points);
+    // pcl::io::savePCDFileBinary("/media/xiaochen/xch_disk/TreeScope_dataset/icra_challenge/development_phase/tree.pcd", *tree_points);
     return 0;
 }

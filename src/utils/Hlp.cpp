@@ -387,35 +387,276 @@ void sor_filter_noise(pcl::PointCloud<pcl::PointXYZ>::Ptr &source, pcl::PointClo
     addPointCloud(filterd_indices, source, filtered);
 }
 
-// transfromation type
-void matrix_to_pair(Eigen::Matrix4f &trans_matrix,
-                    std::pair<Eigen::Vector3d, Eigen::Matrix3d> &trans_pair)
+// FEC cluster, get the cluster points
+void fec_cluster(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, 
+                 std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> &cluster_points_,
+                 ConfigSetting &config_setting)
 {
-    trans_pair.first = trans_matrix.block<3,1>(0,3).cast<double>();
-    trans_pair.second = trans_matrix.block<3,3>(0,0).cast<double>();
+    if(cloud->size() <= 0)
+        return;
+    int min_component_size = config_setting.min_component_size;
+    double tolorance = config_setting.tolorance;
+    int max_n = config_setting.max_n;
+    std::vector<pcl::PointIndices> cluster_indices;
+
+    // fec, get the indices of clusters
+    cluster_indices = FEC(cloud, min_component_size, tolorance, max_n);
+    
+    // loop all clusters
+    pcl::PointCloud<pcl::PointXYZ>::Ptr centers_(new pcl::PointCloud<pcl::PointXYZ>);
+    // std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> cluster_points_;
+    for (int i = 0; i < cluster_indices.size(); i++) 
+    {
+        pcl::PointXYZ center_tmp_;
+        pcl::PointCloud<pcl::PointXYZ>::Ptr points_tmp_(new pcl::PointCloud<pcl::PointXYZ>);
+        for (int j = 0; j < cluster_indices[i].indices.size(); j++)
+        {
+            center_tmp_.x += cloud->points[cluster_indices[i].indices[j]].x;
+            center_tmp_.y += cloud->points[cluster_indices[i].indices[j]].y;
+            center_tmp_.z += cloud->points[cluster_indices[i].indices[j]].z;
+            
+            points_tmp_->push_back(cloud->points[cluster_indices[i].indices[j]]);
+        }
+        center_tmp_.x /= cluster_indices[i].indices.size();
+        center_tmp_.y /= cluster_indices[i].indices.size();
+        center_tmp_.z /= cluster_indices[i].indices.size();
+
+        centers_->push_back(center_tmp_);
+        cluster_points_.push_back(points_tmp_);
+    }
+    
+    for (size_t i = 0; i < centers_->size(); i++)
+    {
+        for (size_t j = i+1; j < centers_->size();)
+        {
+            double dx = centers_->points[i].x - centers_->points[j].x;
+            double dy = centers_->points[i].y - centers_->points[j].y;
+            double dz = centers_->points[i].z - centers_->points[j].z;
+            double d2 = sqrt(dx*dx + dy*dy);
+            double d3 = sqrt(dx*dx + dy*dy + dz*dz);
+            
+            if(d2 < config_setting.merge_dist)
+            {
+                *cluster_points_[i] = *cluster_points_[i] + *cluster_points_[j];
+                
+                centers_->points[i].x = (centers_->points[i].x + centers_->points[j].x) / 2;
+                centers_->points[i].y = (centers_->points[i].y + centers_->points[j].y) / 2;
+                centers_->points[i].z = (centers_->points[i].z + centers_->points[j].z) / 2;
+
+                centers_->erase(centers_->begin() + j);
+                cluster_points_.erase(cluster_points_.begin() + j);
+            }
+            else
+            {
+                j++;
+            }
+        }
+    }
+    
+    std::cout << "cluster_indices size: " << cluster_indices.size() 
+              << ", cluster_points_: " << cluster_points_.size() << std::endl;
 }
 
-void pair_to_matrix(Eigen::Matrix4f &trans_matrix,
-                    std::pair<Eigen::Vector3d, Eigen::Matrix3d> &trans_pair)
+void pcl_cluster(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, 
+                 std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> &cluster_points_,
+                 ConfigSetting &config_setting)
 {
-    trans_matrix.block<3,1>(0,3) = trans_pair.first.cast<float>();
-    trans_matrix.block<3,3>(0,0) = trans_pair.second.cast<float>();
-}
-
-void point_to_vector(pcl::PointCloud<pcl::PointXYZ>::Ptr &pclPoints, 
-                        std::vector<Eigen::Vector3d> &vecPoints)
-{
-	int Num = pclPoints->size();
+	if(cloud->size() <= 0)
+        return;
+    int min_component_size = config_setting.min_component_size;
+    double tolorance = config_setting.tolorance;
+    int max_n = config_setting.max_n;
 	
-	for(int i=0; i<Num; i++)
-	{
-		Eigen::Vector3d p;
-		p[0] = pclPoints->points[i].x;
-		p[1] = pclPoints->points[i].y;
-		p[2] = pclPoints->points[i].z;
+	// build a kd-tree
+	pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>);
+    tree->setInputCloud(cloud);
 
-		vecPoints.push_back(p);
-	}
+	// store the cluster indices
+    std::vector<pcl::PointIndices> cluster_indices;
+
+    // clusters
+    pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
+    ec.setClusterTolerance(tolorance);  // 设置聚类距离阈值
+    ec.setMinClusterSize(min_component_size);     // 设置最小聚类点数
+    // ec.setMaxClusterSize(max_cluster_size);     // 设置最大聚类点数
+    ec.setSearchMethod(tree);                   // 设置搜索方法
+    ec.setInputCloud(cloud);                    // 设置输入点云
+    ec.extract(cluster_indices);                // 执行聚类
+
+    // loop all clusters
+    pcl::PointCloud<pcl::PointXYZ>::Ptr centers_(new pcl::PointCloud<pcl::PointXYZ>);
+    // std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> cluster_points_;
+    for (int i = 0; i < cluster_indices.size(); i++) 
+    {
+        pcl::PointXYZ center_tmp_;
+        pcl::PointCloud<pcl::PointXYZ>::Ptr points_tmp_(new pcl::PointCloud<pcl::PointXYZ>);
+        for (int j = 0; j < cluster_indices[i].indices.size(); j++)
+        {
+            center_tmp_.x += cloud->points[cluster_indices[i].indices[j]].x;
+            center_tmp_.y += cloud->points[cluster_indices[i].indices[j]].y;
+            center_tmp_.z += cloud->points[cluster_indices[i].indices[j]].z;
+            
+            points_tmp_->push_back(cloud->points[cluster_indices[i].indices[j]]);
+        }
+        center_tmp_.x /= cluster_indices[i].indices.size();
+        center_tmp_.y /= cluster_indices[i].indices.size();
+        center_tmp_.z /= cluster_indices[i].indices.size();
+
+        centers_->push_back(center_tmp_);
+        cluster_points_.push_back(points_tmp_);
+    }
+    
+    for (size_t i = 0; i < centers_->size(); i++)
+    {
+        for (size_t j = i+1; j < centers_->size();)
+        {
+            double dx = centers_->points[i].x - centers_->points[j].x;
+            double dy = centers_->points[i].y - centers_->points[j].y;
+            double dz = centers_->points[i].z - centers_->points[j].z;
+            double d2 = sqrt(dx*dx + dy*dy);
+            double d3 = sqrt(dx*dx + dy*dy + dz*dz);
+            
+            if(d2 < config_setting.merge_dist)
+            {
+                *cluster_points_[i] = *cluster_points_[i] + *cluster_points_[j];
+                
+                centers_->points[i].x = (centers_->points[i].x + centers_->points[j].x) / 2;
+                centers_->points[i].y = (centers_->points[i].y + centers_->points[j].y) / 2;
+                centers_->points[i].z = (centers_->points[i].z + centers_->points[j].z) / 2;
+
+                centers_->erase(centers_->begin() + j);
+                cluster_points_.erase(cluster_points_.begin() + j);
+            }
+            else
+            {
+                j++;
+            }
+        }
+    }
+    
+    std::cout << "cluster_indices size: " << cluster_indices.size() 
+              << ", cluster_points_: " << cluster_points_.size() << std::endl;
+}
+// calculate the attributes of each cluster, then select the trunk
+void cluster_attributes(std::vector<Cluster> &clusters,
+                        std::vector<Cluster> &disgard_clusters,
+                        std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> &cluster_points_,
+                        ConfigSetting &config_setting)
+{
+    if(cluster_points_.size() <= 0)
+        return;
+
+    // center of obj cloud
+    Cluster cluster_tmp;
+    
+    // int line=0, plane=0;
+    
+    // loop all clusters
+    // #pragma omp parallel for num_threads(8)
+    for (int i = 0; i < cluster_points_.size(); i++) 
+    {
+        // init value
+        cluster_tmp.center_ = Eigen::Vector3d::Zero();
+        cluster_tmp.covariance_ = Eigen::Matrix3d::Zero();
+        cluster_tmp.normal_ = Eigen::Vector3d::Zero();
+        cluster_tmp.eig_value_ = Eigen::Vector3d::Zero();
+        cluster_tmp.points_.clear();
+
+        double minZ = MAX_INF;
+        double maxZ = MIN_INF;
+        // loop the points in each cluster
+        for (int j = 0; j < cluster_points_[i]->points.size(); j++)
+        {
+            Eigen::Vector3d pi;
+            pi[0] = cluster_points_[i]->points[j].x;
+            pi[1] = cluster_points_[i]->points[j].y;
+            pi[2] = cluster_points_[i]->points[j].z;
+            if (minZ > pi[2])
+                minZ = pi[2];
+            if (maxZ < pi[2])
+                maxZ = pi[2];
+            cluster_tmp.center_ += pi;
+            cluster_tmp.covariance_ += pi * pi.transpose();
+        }
+        cluster_tmp.points_ = *cluster_points_[i];
+
+        // calculate the center and covariance
+        cluster_tmp.center_ = cluster_tmp.center_ / cluster_points_[i]->points.size();
+        cluster_tmp.covariance_ = cluster_tmp.covariance_/cluster_points_[i]->points.size() -
+                                cluster_tmp.center_ * cluster_tmp.center_.transpose();
+        cluster_tmp.center_[2] = minZ; // minZ; 1.5
+        cluster_tmp.minZ = minZ;
+        cluster_tmp.maxZ = maxZ;
+
+        Eigen::EigenSolver<Eigen::Matrix3d> es(cluster_tmp.covariance_);
+        Eigen::Matrix3cd evecs = es.eigenvectors();
+        Eigen::Vector3cd evals = es.eigenvalues();
+        Eigen::Vector3d evalsReal;
+        evalsReal = evals.real();
+        Eigen::Matrix3d::Index evalsMin, evalsMax; 
+        evalsReal.minCoeff(&evalsMin);
+        evalsReal.maxCoeff(&evalsMax); 
+        int evalsMid = 3 - evalsMin - evalsMax;
+        // the attributes in cluster
+        cluster_tmp.linearity_ = (evalsReal(evalsMax) - evalsReal(evalsMid)) / evalsReal(evalsMax);
+        cluster_tmp.planarity_ = (evalsReal(evalsMid) - evalsReal(evalsMin)) / evalsReal(evalsMax);
+        cluster_tmp.scatering_ = evalsReal(evalsMin) / evalsReal(evalsMax);
+        cluster_tmp.eig_value_ << evalsReal(evalsMax), evalsReal(evalsMid), evalsReal(evalsMin);
+        cluster_tmp.normal_ << evecs.real()(0, evalsMax), evecs.real()(1, evalsMax),
+                        evecs.real()(2, evalsMax);
+        Eigen::Vector3d Z = Eigen::Vector3d::UnitZ();
+        Eigen::Vector3d normal_inc = cluster_tmp.normal_ - Z;
+        Eigen::Vector3d normal_add = cluster_tmp.normal_ + Z; 
+        // std::cout << "normal_inc: " << normal_inc.norm() << ", normal_add: " << normal_add.norm() << std::endl;
+        // put it in the cluster
+        if(cluster_tmp.scatering_ > config_setting.scateringThres)
+        {
+            // center point and the direction of line (trunk)
+            cluster_tmp.p_center_.x = cluster_tmp.center_[0];
+            cluster_tmp.p_center_.y = cluster_tmp.center_[1];
+            cluster_tmp.p_center_.z = cluster_tmp.center_[2];
+            cluster_tmp.p_center_.normal_x = cluster_tmp.normal_[0];
+            cluster_tmp.p_center_.normal_y = cluster_tmp.normal_[1];
+            cluster_tmp.p_center_.normal_z = cluster_tmp.normal_[2];
+            cluster_tmp.p_center_.intensity = 1;
+                        
+            cluster_tmp.is_line_ = false;
+            disgard_clusters.push_back(cluster_tmp);
+            continue;
+        }
+        else if(cluster_tmp.linearity_ > config_setting.linearityThres && 
+                (normal_inc.norm()< config_setting.upThres || normal_add.norm()<config_setting.upThres) &&
+                (cluster_tmp.maxZ - cluster_tmp.minZ) > config_setting.clusterHeight)
+        {
+            // center point and the direction of line (trunk)
+            cluster_tmp.p_center_.x = cluster_tmp.center_[0];
+            cluster_tmp.p_center_.y = cluster_tmp.center_[1];
+            cluster_tmp.p_center_.z = cluster_tmp.center_[2];
+            cluster_tmp.p_center_.normal_x = cluster_tmp.normal_[0];
+            cluster_tmp.p_center_.normal_y = cluster_tmp.normal_[1];
+            cluster_tmp.p_center_.normal_z = cluster_tmp.normal_[2];
+            cluster_tmp.p_center_.intensity = 1;
+                        
+            cluster_tmp.is_line_ = true;
+            clusters.push_back(cluster_tmp);
+            // line++;
+        }
+        else
+        {
+            // center point and the direction of line (trunk)
+            cluster_tmp.p_center_.x = cluster_tmp.center_[0];
+            cluster_tmp.p_center_.y = cluster_tmp.center_[1];
+            cluster_tmp.p_center_.z = cluster_tmp.center_[2];
+            cluster_tmp.p_center_.normal_x = cluster_tmp.normal_[0];
+            cluster_tmp.p_center_.normal_y = cluster_tmp.normal_[1];
+            cluster_tmp.p_center_.normal_z = cluster_tmp.normal_[2];
+            cluster_tmp.p_center_.intensity = 1;
+                        
+            cluster_tmp.is_line_ = false;
+            disgard_clusters.push_back(cluster_tmp);
+        }
+    }
+    // std::cout << "Line: " << line << ", Plane: " << plane << std::endl;
 }
 
 // down sample the point cloud, by voxel
@@ -427,6 +668,7 @@ void down_sampling_voxel(pcl::PointCloud<pcl::PointXYZ> &pl_feat, double voxel_s
 
 	// a container, include key and value
 	std::unordered_map<UNI_VOXEL_LOC, M_POINT> voxel_map;
+	voxel_map.reserve(200000000);
 	// point cloud size
 	uint plsize = pl_feat.size();
 	// loop for all points, and sum the information in each grid
@@ -479,246 +721,34 @@ void down_sampling_voxel(pcl::PointCloud<pcl::PointXYZ> &pl_feat, double voxel_s
 			  << ", downsampled points num: " << plsize << std::endl;
 }
 
-// calculate the accuracy of pose
-void accur_evaluation(std::pair<Eigen::Vector3d, Eigen::Matrix3d> esti, Eigen::Affine3d truth,
-					 std::pair<Eigen::Vector3d, Eigen::Vector3d> &errors)
+// transfromation type
+void matrix_to_pair(Eigen::Matrix4f &trans_matrix,
+                    std::pair<Eigen::Vector3d, Eigen::Matrix3d> &trans_pair)
 {
-	Eigen::Vector3d trans_error;
-	Eigen::Vector3d rotation_error;
+    trans_pair.first = trans_matrix.block<3,1>(0,3).cast<double>();
+    trans_pair.second = trans_matrix.block<3,3>(0,0).cast<double>();
+}
+
+void pair_to_matrix(Eigen::Matrix4f &trans_matrix,
+                    std::pair<Eigen::Vector3d, Eigen::Matrix3d> &trans_pair)
+{
+    trans_matrix.block<3,1>(0,3) = trans_pair.first.cast<float>();
+    trans_matrix.block<3,3>(0,0) = trans_pair.second.cast<float>();
+}
+
+void point_to_vector(pcl::PointCloud<pcl::PointXYZ>::Ptr &pclPoints, 
+                        std::vector<Eigen::Vector3d> &vecPoints)
+{
+	int Num = pclPoints->size();
 	
-	// // translation error
-	// trans_error = esti.first - truth.translation();
-	// // rotation error
-	// Eigen::Vector3d estiEuler=esti.second.eulerAngles(2,1,0);
-	// Eigen::Vector3d truthEuler=truth.rotation().eulerAngles(2,1,0);
-	// rotation_error = estiEuler - truthEuler;
-
-
-	// trans the pose type into the pair vector and matrix
-	std::pair<Eigen::Vector3d, Eigen::Matrix3d> truth_pose;
-	truth_pose.first = truth.translation();
-	truth_pose.second = truth.rotation();
-	// calculate the error
-	std::pair<Eigen::Vector3d, Eigen::Matrix3d> esti_inv = matrixInv(esti);
-	std::pair<Eigen::Vector3d, Eigen::Matrix3d> esti_err = matrixMultip(esti_inv, truth_pose);
-	// translation and rotation error
-	trans_error = esti_err.first;
-	rotation_error = esti_err.second.eulerAngles(2,1,0);
-
-	for(int i=0; i<3; i++)
+	for(int i=0; i<Num; i++)
 	{
-		if(abs(rotation_error[i] - 2*M_PI) < 0.3)
-			rotation_error[i] -= 2*M_PI;
+		Eigen::Vector3d p;
+		p[0] = pclPoints->points[i].x;
+		p[1] = pclPoints->points[i].y;
+		p[2] = pclPoints->points[i].z;
 
-		if(abs(rotation_error[i] + 2*M_PI) < 0.3)
-			rotation_error[i] += 2*M_PI;
-		
-		if(abs(rotation_error[i] - M_PI) < 0.3)
-			rotation_error[i] -= M_PI;
-
-		if(abs(rotation_error[i] + M_PI) < 0.3)
-			rotation_error[i] += M_PI;
+		vecPoints.push_back(p);
 	}
-	
-	// use the degree to evoluate the rotation error
-	// rotation_error = rotation_error * (180/M_PI);
-	
-	// use the mrad to evoluate the rotation error
-	rotation_error = rotation_error * 1000;
-	
-	errors.first = trans_error;
-	errors.second = rotation_error;
-	// std::cout << "trans: \n" << trans_error << "\nrotation: \n" << rotation_error << std::endl;
-}
-// write the accuracy result
-void write_error(std::string filePath, std::pair<Eigen::Vector3d, Eigen::Vector3d> &errors)
-{
-	Eigen::Vector3d trans_error = errors.first;
-	Eigen::Vector3d rotation_error = errors.second;
-
-	std::ofstream outfile(filePath);
-	if (!outfile.is_open()) 
-	{
-		std::cerr << "failed open this file!" << std::endl;
-		return;
-	}
-	outfile << trans_error[0] << ", " << trans_error[1] << ", " << trans_error[2] << ", ";
-	outfile << rotation_error[0] << ", " << rotation_error[1] << ", " << rotation_error[2] << std::endl;
-	outfile.close();
-}
-
-// calculate the accuracy vector
-void accur_evaluation_vec(std::vector<TLSPos> esti, std::vector<Eigen::Affine3d> truh, std::vector<PosError> &errors)
-{
-	std::pair<Eigen::Vector3d, Eigen::Vector3d> err;
-	int ID;
-	PosError pe;
-
-	for(int i=0; i<esti.size(); i++)
-	{
-		// get the station ID
-		ID = esti[i].ID;
-		
-		// get the estimated pose
-		std::pair<Eigen::Vector3d, Eigen::Matrix3d> esti_pose;
-		esti_pose.first = esti[i].t;
-		esti_pose.second = esti[i].R;
-		
-		// evaluaion
-		accur_evaluation(esti_pose, truh[ID], err);
-		
-		// get the ID and evaluation result
-		pe.ID = ID;
-		pe.error = err;
-		errors.push_back(pe);
-	}
-}
-
-// write the result vector
-void write_error_vec(std::string filePath, std::vector<PosError> &errors)
-{
-	std::ofstream outfile(filePath);
-	if (!outfile.is_open()) 
-	{
-		std::cerr << "failed open this file!" << std::endl;
-		return;
-	}
-	
-	for(int i=0; i<errors.size(); i++)
-	{
-		int id = errors[i].ID;
-		Eigen::Vector3d trans_error = errors[i].error.first;
-		Eigen::Vector3d rotation_error = errors[i].error.second;
-
-		outfile << "Station: " << id << std::endl;
-		outfile << trans_error[0] << ", " << trans_error[1] << ", " << trans_error[2] << ", ";
-		outfile << rotation_error[0] << ", " << rotation_error[1] << ", " << rotation_error[2] << std::endl;
-	}
-	outfile.close();
-}
-
-void write_pose(std::string filePath, std::vector<TLSPos> poses)
-{
-	std::ofstream outfile(filePath);
-	if (!outfile.is_open()) 
-	{
-		std::cerr << "failed open this file: " << filePath << std::endl;
-		return;
-	}
-	for(int i=0; i<poses.size(); i++)
-	{
-		int id = poses[i].ID;
-		Eigen::Matrix3d R = poses[i].R;
-		Eigen::Vector3d t = poses[i].t;
-		outfile << "Station: " << id << std::endl;
-		outfile << t[0] << ", " << t[1] << ", " << t[2] << std::endl;
-		outfile << R << std::endl << std::endl;
-	}
-	outfile.close();
-}
-
-void write_relative_pose(std::string filePath, std::pair<Eigen::Vector3d, Eigen::Matrix3d> poses)
-{
-	std::ofstream outfile(filePath);
-	if (!outfile.is_open()) 
-	{
-		std::cerr << "failed open this file: " << filePath << std::endl;
-		return;
-	}
-	outfile << "Trans: \n" << poses.first << std::endl;
-	outfile << "Rot: \n" << poses.second << std::endl;
-	
-	outfile.close();
-}
-
-// get the absolut pose by relative pose between nodes
-void RelaToAbs(std::vector<CandidateInfo> &candidates_vec, std::vector<TLSPos> &tlsVec)
-{
-    for(int num=0; num<2; num++)
-	{
-		// calculated the initial pos of each TLS station
-		for(int i=0; i<candidates_vec.size(); i++)
-		{
-			TLSPos currPos;
-			int candtlsID, tlsID = candidates_vec[i].currFrameID;
-			// set the first station
-			if(tlsID == 0)
-			{
-				currPos.ID = tlsID;
-				currPos.R = Eigen::Matrix3d::Identity();
-				currPos.t = Eigen::Vector3d::Zero();
-				currPos.isValued = true;
-				tlsVec[tlsID] = currPos;
-			}
-			// loop the candiates of each station, and calculate the pose
-			for(int j=0; j<candidates_vec[i].candidateIDScore.size(); j++)
-			{
-				candtlsID = candidates_vec[i].candidateIDScore[j].first;
-				// from currt to candidiate pose
-				if(tlsVec[tlsID].isValued && !tlsVec[candtlsID].isValued)
-				{
-					currPos.ID = candtlsID;
-					currPos.R = tlsVec[tlsID].R * candidates_vec[i].relativePose[j].second.inverse();
-					currPos.t = tlsVec[tlsID].t - 
-								tlsVec[tlsID].R * candidates_vec[i].relativePose[j].second.inverse() * candidates_vec[i].relativePose[j].first;
-					currPos.isValued = true;
-					tlsVec[candtlsID] = currPos;
-				}
-				// from candidiate to currt
-				if(!tlsVec[tlsID].isValued && tlsVec[candtlsID].isValued)
-				{
-					currPos.ID = tlsID;
-					currPos.R = tlsVec[candtlsID].R * candidates_vec[i].relativePose[j].second;
-					currPos.t = tlsVec[candtlsID].R * candidates_vec[i].relativePose[j].first + tlsVec[candtlsID].t;
-					currPos.isValued = true;
-					tlsVec[tlsID] = currPos;
-				}
-			}
-		}
-	}
-}
-
-// get the absolut pose (DFS)
-void AbsByDFS(int current_node, TLSPos &current_pose, std::vector<CandidateInfo> &candidates_vec, 
-				std::vector<TLSPos> &tlsVec, std::unordered_set<int>& visited)
-{
-	visited.insert(current_node);
-	tlsVec[current_node] = current_pose;
-	for (int i=0; i<candidates_vec[current_node].candidateIDScore.size(); i++)
-	{
-		if (visited.find(candidates_vec[current_node].candidateIDScore[i].first) == visited.end())
-		{
-			int targetID = candidates_vec[current_node].candidateIDScore[i].first;
-			TLSPos newPose;
-			newPose.ID = targetID;
-			newPose.isValued = true;
-			newPose.R = current_pose.R * candidates_vec[current_node].relativePose[i].second.inverse();
-			newPose.t = current_pose.t - 
-				current_pose.R * candidates_vec[current_node].relativePose[i].second.inverse() * candidates_vec[current_node].relativePose[i].first;
-
-			AbsByDFS(targetID, newPose, candidates_vec, tlsVec, visited);
-		}
-	}
-}
-
-std::pair<Eigen::Vector3d, Eigen::Matrix3d> matrixInv(std::pair<Eigen::Vector3d, Eigen::Matrix3d> m1)
-{
-	std::pair<Eigen::Vector3d, Eigen::Matrix3d> res;
-	
-	res.second = m1.second.inverse();
-	res.first = -m1.second.inverse() * m1.first;
-
-	return res;
-}
-
-std::pair<Eigen::Vector3d, Eigen::Matrix3d> matrixMultip(std::pair<Eigen::Vector3d, Eigen::Matrix3d> m1, 
-                                                        std::pair<Eigen::Vector3d, Eigen::Matrix3d> m2)
-{
-	std::pair<Eigen::Vector3d, Eigen::Matrix3d> res;
-
-	res.second = m1.second * m2.second;
-	res.first = m1.second*m2.first + m1.first;
-
-	return res;
 }
 

@@ -19,6 +19,11 @@
 #include <pcl/point_types.h>
 #include <pcl/filters/filter.h>
 #include <pcl/filters/statistical_outlier_removal.h>
+#include <pcl/segmentation/extract_clusters.h>
+#include <pcl/kdtree/kdtree.h>
+
+// Eigen
+#include <Eigen/Dense>
 
 // CSF
 #include "CSF.h"
@@ -29,6 +34,11 @@
 #ifndef _DST_H_Included_
 #define _DST_H_Included_
 #include "../include/dst/DST.h"
+#endif
+
+#ifndef _FEC_H_Included_
+#define _FEC_H_Included_
+#include "../include/utils/FEC.h"
 #endif
 
 #define INSIGNIFICANCE -99999
@@ -88,6 +98,22 @@ void clothSimulationFilter(pcl::PointCloud<pcl::PointXYZ>::Ptr input_cloud,
 void sor_filter_noise(pcl::PointCloud<pcl::PointXYZ>::Ptr &source, 
                         pcl::PointCloud<pcl::PointXYZ>::Ptr &filtered);
 
+
+// FEC cluster, get the cluster points
+void fec_cluster(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, 
+                 std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> &cluster_points_,
+                 ConfigSetting &config_setting);
+
+void pcl_cluster(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, 
+                 std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> &cluster_points_,
+                 ConfigSetting &config_setting);
+
+// calculate the attributes of each cluster, then select the trunk
+void cluster_attributes(std::vector<Cluster> &clusters,
+                        std::vector<Cluster> &disgard_clusters,
+                        std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> &cluster_points_,
+                        ConfigSetting &config_setting);
+
 // split the line into string
 std::vector<std::string> split(std::string str,std::string s);
 
@@ -101,34 +127,6 @@ void point_to_vector(pcl::PointCloud<pcl::PointXYZ>::Ptr &pclPoints,
 
 void down_sampling_voxel(pcl::PointCloud<pcl::PointXYZ> &pl_feat,
                          double voxel_size);
-
-// accuracy evalution and write, for each pose
-void accur_evaluation(std::pair<Eigen::Vector3d, Eigen::Matrix3d> esti, Eigen::Affine3d truth,
-					 std::pair<Eigen::Vector3d, Eigen::Vector3d> &errors);
-void write_error(std::string filePath, std::pair<Eigen::Vector3d, Eigen::Vector3d> &errors);
-
-// accuracy evalution and write, for poses vector
-void accur_evaluation_vec(std::vector<TLSPos> esti, std::vector<Eigen::Affine3d> truh, std::vector<PosError> &errors);
-
-void write_error_vec(std::string filePath, std::vector<PosError> &errors);
-
-// write the pose data
-void write_pose(std::string filePath, std::vector<TLSPos> poses);
-
-// write the rlative pose between two station
-void write_relative_pose(std::string filePath, std::pair<Eigen::Vector3d, Eigen::Matrix3d> poses);
-
-void RelaToAbs(std::vector<CandidateInfo> &candidates_vec, std::vector<TLSPos> &tlsVec);
-
-void AbsByDFS(int current_node, TLSPos &current_pose, std::vector<CandidateInfo> &candidates_vec, 
-				std::vector<TLSPos> &tlsVec, std::unordered_set<int>& visited);
-
-/***the simple operations of matrix***/
-// inv
-std::pair<Eigen::Vector3d, Eigen::Matrix3d> matrixInv(std::pair<Eigen::Vector3d, Eigen::Matrix3d> m1);
-// multiple
-std::pair<Eigen::Vector3d, Eigen::Matrix3d> matrixMultip(std::pair<Eigen::Vector3d, Eigen::Matrix3d> m1, 
-                                                        std::pair<Eigen::Vector3d, Eigen::Matrix3d> m2);
 
 
 //============the following are UBUNTU/LINUX ONLY terminal color codes.==========

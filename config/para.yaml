@@ -4,8 +4,8 @@
 pcd_data: /media/xiaochen/xch_disk/TreeScope_dataset/icra_challenge/development_phase/VAT-1022-A6.pcd
 
 # for FEC cluster
-min_component_size: 10000
-tolorance: 0.05
+min_component_size: 100
+tolorance: 0.2
 max_n: 50
 merge_dist: 0.1
 
