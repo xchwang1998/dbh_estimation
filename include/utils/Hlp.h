@@ -17,6 +17,8 @@
 // pcl
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
+#include <pcl/filters/filter.h>
+#include <pcl/filters/statistical_outlier_removal.h>
 
 // CSF
 #include "CSF.h"
@@ -82,6 +84,9 @@ void clothSimulationFilter(pcl::PointCloud<pcl::PointXYZ>::Ptr input_cloud,
 						   pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_obj,
                            ConfigSetting &config_setting);
 
+
+void sor_filter_noise(pcl::PointCloud<pcl::PointXYZ>::Ptr &source, 
+                        pcl::PointCloud<pcl::PointXYZ>::Ptr &filtered);
 
 // split the line into string
 std::vector<std::string> split(std::string str,std::string s);

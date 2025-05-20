@@ -30,9 +30,13 @@ int main(int argc, char **argv)
     pcl::PointCloud<pcl::PointXYZ>::Ptr input_cloud(new pcl::PointCloud<pcl::PointXYZ>);
     ReadPCD(config_setting.pcd_data, input_cloud);
 
+    pcl::PointCloud<pcl::PointXYZ>::Ptr input_cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
+    sor_filter_noise(input_cloud, input_cloud_filtered);
+    std::cout << "input_cloud SOR filtered: " << input_cloud_filtered->size() << std::endl;
+
     pcl::PointCloud<pcl::PointXYZ>::Ptr ground_points(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::PointCloud<pcl::PointXYZ>::Ptr tree_points(new pcl::PointCloud<pcl::PointXYZ>);
-    clothSimulationFilter(input_cloud, ground_points, tree_points, config_setting);
+    clothSimulationFilter(input_cloud_filtered, ground_points, tree_points, config_setting);
 
     std::cout << "ground_points: " << ground_points->size() << std::endl;
     std::cout << "tree_points: " << tree_points->size() << std::endl;

@@ -374,6 +374,19 @@ void clothSimulationFilter(pcl::PointCloud<pcl::PointXYZ>::Ptr input_cloud,
     addPointCloud(offGroundIndexes, input_cloud, cloud_obj);
 }
 
+void sor_filter_noise(pcl::PointCloud<pcl::PointXYZ>::Ptr &source, pcl::PointCloud<pcl::PointXYZ>::Ptr &filtered)
+{
+
+    pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+    sor.setInputCloud(source);
+    sor.setMeanK(25);
+    sor.setStddevMulThresh(1.0);
+    std::vector<int> filterd_indices;
+    sor.filter(filterd_indices);
+    
+    addPointCloud(filterd_indices, source, filtered);
+}
+
 // transfromation type
 void matrix_to_pair(Eigen::Matrix4f &trans_matrix,
                     std::pair<Eigen::Vector3d, Eigen::Matrix3d> &trans_pair)
