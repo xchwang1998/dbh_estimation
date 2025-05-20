@@ -5,15 +5,15 @@ pcd_data: /media/xiaochen/xch_disk/TreeScope_dataset/icra_challenge/development_
 
 # for FEC cluster
 min_component_size: 100
-tolorance: 0.2
+tolorance: 0.1
 max_n: 50
 merge_dist: 0.1
 
 # to distinguish the cluster type
-linearityThres: 0.95
+linearityThres: 0.9
 scateringThres: 0.05
-upThres: 0.3
-clusterHeight: 5
+upThres: 0.7
+clusterHeight: 0
 
 # for tri descriptor
 descriptor_near_num: 10

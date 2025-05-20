@@ -70,6 +70,7 @@ struct POINT_D {
 
 // structure for Cluster
 typedef struct Cluster {
+  int label;
   pcl::PointXYZINormal p_center_;
   pcl::PointCloud<pcl::PointXYZ> points_;
   Eigen::Vector3d center_;
@@ -84,63 +85,40 @@ typedef struct Cluster {
   double scatering_ = 0;
   bool is_plane_ = false;
   bool is_line_ = false;
+
+  bool is_cylinder_ = false;
+  pcl::ModelCoefficients cylinder_coff;
+
+  bool dbh_flag = false;
+  pcl::ModelCoefficients dbh_coff;
+
 } Cluster;
 
-// Structure for Multi-level Descriptor
-typedef struct TriDesc {
-  // the side lengths of STDesc, arranged from short to long
-  Eigen::Vector3d side_length_;
+// fitting cylinder parameters
+typedef struct cylinderConfig {
+    int cyliner_point_num;
+    double model_dist_thres;
+    int iteration_num;
+    double min_radius;
+    double max_radius;
+    bool is_opti_cylinder_coeff;
+} cylinderConfig;
 
-  // projection angle between vertices
-  Eigen::Vector3d angle_;
+// fitting circle parameters
+typedef struct circleConfig {
+    int circle_point_num;
+    double circle_model_dist_thres;
+    int circle_iteration_num;
+    double circle_min_radius;
+    double circle_max_radius;
+    bool is_opti_coeff;
 
-  Eigen::Vector3d center_;
-  unsigned int frame_id_;
+    // split the profile, use the fix num or use the fix step
+    bool use_num_or_step;
+    int profile_num;
+    double profile_step;
+} circleConfig;
 
-  // three vertexs
-  Eigen::Vector3d vertex_A_;
-  Eigen::Vector3d vertex_B_;
-  Eigen::Vector3d vertex_C_;
-
-  // some other inform attached to each vertex,e.g., intensity
-  Eigen::Vector3d vertex_attached_;
-} TriDesc;
-
-typedef struct FrameInfo{
-  std::vector<TriDesc> desc_;
-  unsigned int frame_id_;
-  pcl::PointCloud<pcl::PointXYZINormal>::Ptr currCenter;
-  pcl::PointCloud<pcl::PointXYZINormal>::Ptr currCenterFix;
-  pcl::PointCloud<pcl::PointXYZ>::Ptr currPoints;
-}FrameInfo;
-
-// std descriptor match lists
-typedef struct TriMatchList {
-  std::vector<std::pair<TriDesc, TriDesc>> match_list_;
-  std::pair<int, int> match_id_;
-  double mean_dis_;
-} TriMatchList;
-
-// candidate information
-typedef struct CandidateInfo {
-  int currFrameID;
-  std::vector<std::pair<int, double>> candidateIDScore;
-  std::vector<std::pair<Eigen::Vector3d, Eigen::Matrix3d>> relativePose;
-  std::vector<std::vector<std::pair<TriDesc, TriDesc>>> triMatch;
-} CandidateInfo;
-
-// pose information of TLS stations
-typedef struct TLSPos {
-  int ID;
-  Eigen::Vector3d t;
-  Eigen::Matrix3d R;
-  bool isValued = false;
-}TLSPos;
-
-typedef struct PosError {
-  int ID;
-  std::pair<Eigen::Vector3d, Eigen::Vector3d> error;
-}PosError;
 
 // location of STD, and a operator to define whether is equal or not
 class TriDesc_LOC {

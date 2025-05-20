@@ -21,6 +21,14 @@
 #include <pcl/filters/statistical_outlier_removal.h>
 #include <pcl/segmentation/extract_clusters.h>
 #include <pcl/kdtree/kdtree.h>
+#include <pcl/kdtree/kdtree_flann.h>
+
+#include <pcl/sample_consensus/ransac.h>
+#include <pcl/sample_consensus/sac_model_cylinder.h>
+#include <pcl/sample_consensus/sac_model_circle.h>
+#include <pcl/filters/extract_indices.h>
+#include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/features/normal_3d.h>
 
 // Eigen
 #include <Eigen/Dense>
@@ -78,6 +86,25 @@ long ArrayMax(const double *pdIn, const long lEleNum);
 long ArrayMax(const long *plIn, const long lEleNum);
 long ArrayMax(const int *pnIn, const long lEle_Num);
 
+// generate the rgb color randomly
+int* rand_rgb();
+
+
+template<typename T>
+void point_to_XY(typename pcl::PointCloud<T>::Ptr &source, pcl::PointCloud<pcl::PointXY>::Ptr &xyPoints)
+{
+    xyPoints->reserve(source->size());
+    for(int i=0; i<source->size(); i++)
+    {
+        pcl::PointXY pi;
+        pi.x = source->points[i].x;
+        pi.y = source->points[i].y;
+        
+        xyPoints->push_back(pi);
+    }
+}
+
+
 // read the parameters from yaml file 
 void ReadParas(const std::string& file_path, ConfigSetting &config_setting);
 
@@ -99,6 +126,15 @@ void sor_filter_noise(pcl::PointCloud<pcl::PointXYZ>::Ptr &source,
                         pcl::PointCloud<pcl::PointXYZ>::Ptr &filtered);
 
 
+void stem_above_ground(pcl::PointCloud<pcl::PointXYZ>::Ptr &tree_points, 
+						pcl::PointCloud<pcl::PointXYZ>::Ptr &ground_points,
+						pcl::PointCloud<pcl::PointXYZ>::Ptr &croped_tree);
+
+void estimateNormals(
+    const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,
+    pcl::PointCloud<pcl::Normal>::Ptr& normals,
+    double radius);
+
 // FEC cluster, get the cluster points
 void fec_cluster(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, 
                  std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> &cluster_points_,
@@ -113,6 +149,17 @@ void cluster_attributes(std::vector<Cluster> &clusters,
                         std::vector<Cluster> &disgard_clusters,
                         std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> &cluster_points_,
                         ConfigSetting &config_setting);
+
+// from cluster points to a whole point cloud
+void clusterTopoints(std::vector<Cluster>& clusters, pcl::PointCloud<pcl::PointXYZRGBL>::Ptr& points);
+
+// fit the trunk by PCL ransac (cylinder)
+bool pcl_ransac_cylinder(Cluster& source, cylinderConfig& fitting_config);
+
+// fit the trunk by PCL ransac (circle)
+bool pcl_ransac_circle(pcl::PointCloud<pcl::PointXYZ>& source, 
+                       pcl::ModelCoefficients& coff, 
+                       circleConfig& fitting_config);
 
 // split the line into string
 std::vector<std::string> split(std::string str,std::string s);

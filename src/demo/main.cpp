@@ -46,12 +46,31 @@ int main(int argc, char **argv)
     std::cout << "ground_points: " << ground_points->size() << std::endl;
     std::cout << "tree_points: " << tree_points->size() << std::endl;
 
-    std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> obj_cluster_points;    
+    pcl::PointCloud<pcl::PointXYZ>::Ptr tree_points_croped(new pcl::PointCloud<pcl::PointXYZ>);
+    stem_above_ground(tree_points, ground_points, tree_points_croped);
+    pcl::io::savePCDFileBinary("/media/xiaochen/xch_disk/TreeScope_dataset/icra_challenge/development_phase/tree_croped.pcd", *tree_points_croped);
+
+    std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> obj_cluster_points;
     // fec_cluster(tree_points, obj_cluster_points, config_setting);    
-    pcl_cluster(tree_points, obj_cluster_points, config_setting); 
+    // pcl_cluster(tree_points, obj_cluster_points, config_setting); 
+    pcl_cluster(tree_points_croped, obj_cluster_points, config_setting);
     std::cout << "obj_cluster_points: " << obj_cluster_points.size() << std::endl;
 
-    // pcl::io::savePCDFileBinary("/media/xiaochen/xch_disk/TreeScope_dataset/icra_challenge/development_phase/ground.pcd", *ground_points);
-    // pcl::io::savePCDFileBinary("/media/xiaochen/xch_disk/TreeScope_dataset/icra_challenge/development_phase/tree.pcd", *tree_points);
+    std::vector<Cluster> obj_clusters;
+    std::vector<Cluster> discarded_clusters;
+    cluster_attributes(obj_clusters, discarded_clusters, obj_cluster_points, config_setting);
+    std::cout << "obj_clusters size: " << obj_clusters.size() << std::endl;
+    std::cout << "discarded_clusters size: " << discarded_clusters.size() << std::endl;
+    
+    pcl::PointCloud<pcl::PointXYZRGBL>::Ptr obj_points(new pcl::PointCloud<pcl::PointXYZRGBL>());
+    clusterTopoints(obj_clusters, obj_points);
+    
+    pcl::PointCloud<pcl::PointXYZRGBL>::Ptr discard_points(new pcl::PointCloud<pcl::PointXYZRGBL>());
+    clusterTopoints(discarded_clusters, discard_points);
+    
+    pcl::io::savePCDFileBinary("/media/xiaochen/xch_disk/TreeScope_dataset/icra_challenge/development_phase/ground.pcd", *ground_points);
+    pcl::io::savePCDFileBinary("/media/xiaochen/xch_disk/TreeScope_dataset/icra_challenge/development_phase/tree.pcd", *tree_points);
+    pcl::io::savePCDFileBinary("/media/xiaochen/xch_disk/TreeScope_dataset/icra_challenge/development_phase/obj.pcd", *obj_points);
+    pcl::io::savePCDFileBinary("/media/xiaochen/xch_disk/TreeScope_dataset/icra_challenge/development_phase/discard.pcd", *discard_points);
     return 0;
 }

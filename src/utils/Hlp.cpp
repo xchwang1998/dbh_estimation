@@ -248,6 +248,16 @@ long ArrayMax(const int *pnIn, const long lEle_Num)
 	return lMax_ID;
 }
 
+// generate the rgb color randomly
+int* rand_rgb() 
+{
+    int* rgb = new int[3];
+    rgb[0] = rand() % 255;
+    rgb[1] = rand() % 255;
+    rgb[2] = rand() % 255;
+    return rgb;
+}
+
 // read the parameters from yaml file 
 void ReadParas(const std::string& file_path, ConfigSetting &config_setting)
 {
@@ -386,6 +396,7 @@ void sor_filter_noise(pcl::PointCloud<pcl::PointXYZ>::Ptr &source, pcl::PointClo
     
     addPointCloud(filterd_indices, source, filtered);
 }
+
 
 // FEC cluster, get the cluster points
 void fec_cluster(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, 
@@ -659,6 +670,38 @@ void cluster_attributes(std::vector<Cluster> &clusters,
     // std::cout << "Line: " << line << ", Plane: " << plane << std::endl;
 }
 
+// sum the cluster points into a total point cloud
+void clusterTopoints(std::vector<Cluster>& clusters, pcl::PointCloud<pcl::PointXYZRGBL>::Ptr& points)
+{
+    for(int i=0; i<clusters.size(); i++)
+    {
+        int label = clusters[i].label;
+        int* rgb = rand_rgb();
+        // in this study, the label-1 respresents ground point and is colored in brown
+        if(label == 1)
+        {
+            rgb[0] = 216;
+            rgb[1] = 144;
+            rgb[2] = 5;
+        }
+          
+        pcl::PointXYZRGBL thisPoint;
+        for (int j=0; j<clusters[i].points_.size(); j++)
+        {
+            thisPoint.x = clusters[i].points_[j].x;
+            thisPoint.y = clusters[i].points_[j].y;
+            thisPoint.z = clusters[i].points_[j].z;
+            thisPoint.r = rgb[0];
+            thisPoint.g = rgb[1];
+            thisPoint.b = rgb[2];
+            thisPoint.label = j;
+
+            // push the points with color and label
+            points->push_back(thisPoint);
+        }
+    }
+}
+
 // down sample the point cloud, by voxel
 void down_sampling_voxel(pcl::PointCloud<pcl::PointXYZ> &pl_feat, double voxel_size) 
 {
@@ -719,6 +762,184 @@ void down_sampling_voxel(pcl::PointCloud<pcl::PointXYZ> &pl_feat, double voxel_s
 	}
 	std::cout << "Input points num: " << pointsNum << ", downsample voxel size: " << voxel_size 
 			  << ", downsampled points num: " << plsize << std::endl;
+}
+
+
+void stem_above_ground(pcl::PointCloud<pcl::PointXYZ>::Ptr &tree_points, 
+						pcl::PointCloud<pcl::PointXYZ>::Ptr &ground_points,
+						pcl::PointCloud<pcl::PointXYZ>::Ptr &croped_tree)
+{
+	if(tree_points->size() == 0 || ground_points->size() == 0)
+	{
+		std::cerr << "Error: tree or ground no points" << std::endl;
+		return;
+	}
+
+	pcl::PointCloud<pcl::PointXY>::Ptr ground_2d(new pcl::PointCloud<pcl::PointXY>());
+	point_to_XY<pcl::PointXYZ>(ground_points, ground_2d);
+
+	// pcl::KdTreeFLANN<pcl::PointXYZ>::Ptr tree(new pcl::KdTreeFLANN<pcl::PointXYZ>);
+    // tree->setInputCloud(ground_points);
+	pcl::KdTreeFLANN<pcl::PointXY>::Ptr tree(new pcl::KdTreeFLANN<pcl::PointXY>);
+	tree->setInputCloud(ground_2d);
+
+	for(int i=0; i<tree_points->size(); i++)
+	{
+		// pcl::PointXYZ query_center = tree_points->points[i];
+		pcl::PointXY query_center;
+		query_center.x = tree_points->points[i].x;
+		query_center.y = tree_points->points[i].y;
+
+		std::vector<int> point_indices;
+		std::vector<float> distances;
+		if(tree->nearestKSearch(query_center, 1, point_indices, distances) > 0)
+		{
+			int index = point_indices[0];
+			pcl::PointXYZ near_ground_point = ground_points->points[index];
+			if(std::abs(tree_points->points[i].z - near_ground_point.z) < 2 &&
+				std::abs(tree_points->points[i].z - near_ground_point.z) > 1)
+			{
+				croped_tree->push_back(tree_points->points[i]);
+			}
+		}
+	}
+}
+
+void estimateNormals(
+    const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,
+    pcl::PointCloud<pcl::Normal>::Ptr& normals,
+    double radius)
+{
+    // 创建法向量估计对象
+    pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> ne;
+    ne.setInputCloud(cloud);
+
+    // 创建KD树用于近邻搜索
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>());
+    ne.setSearchMethod(tree);
+
+    // 设置搜索半径
+    ne.setRadiusSearch(radius);
+
+    // 计算法向量
+    normals = pcl::PointCloud<pcl::Normal>::Ptr(new pcl::PointCloud<pcl::Normal>);
+    ne.compute(*normals);
+}
+
+// fit the trunk by PCL ransac (cylinder)
+bool pcl_ransac_cylinder(Cluster& source, cylinderConfig& fitting_config)
+{
+    if(source.points_.size() < fitting_config.cyliner_point_num)
+    {
+        source.is_cylinder_ = false;
+        return false;
+    }
+
+    // get the point and normal data
+    pcl::PointCloud<pcl::PointXYZ>::Ptr tmp_points(new pcl::PointCloud<pcl::PointXYZ>());
+    pcl::PointCloud<pcl::Normal>::Ptr tmp_normal(new pcl::PointCloud<pcl::Normal>());
+    for(int i=0; i<source.points_.size(); i++)
+    {
+        pcl::PointXYZ pi;
+        pcl::Normal Ni;
+        
+        pi.x = source.points_[i].x;
+        pi.y = source.points_[i].y;
+        pi.z = source.points_[i].z;
+        
+        tmp_points->push_back(pi);
+    }
+	estimateNormals(tmp_points, tmp_normal, 0.3);
+
+    // ransac segmentation
+    pcl::SACSegmentationFromNormals<pcl::PointXYZ, pcl::Normal> seg;
+    seg.setModelType(pcl::SACMODEL_CYLINDER);
+    seg.setMethodType(pcl::SAC_RANSAC);
+    seg.setDistanceThreshold(fitting_config.model_dist_thres);  // inlier point to model distance
+    seg.setMaxIterations(fitting_config.iteration_num);
+    seg.setRadiusLimits(fitting_config.min_radius, fitting_config.max_radius); // limit the cylinder radius
+    seg.setOptimizeCoefficients(fitting_config.is_opti_cylinder_coeff);
+    seg.setInputCloud(tmp_points);
+    seg.setInputNormals(tmp_normal);
+    
+    // perform the segmentation
+    // coefficients is consist of 7 parameters, the first three is the axis of cylinder (0-2), 
+    // the second three is a point on the axis (3-5), and the last is the radius of cylineder (6) 
+    pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
+    pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
+    seg.segment(*inliers, *coefficients);
+    // no inlier points have been found
+    if (inliers->indices.empty() && inliers->indices.size() < 0.5*fitting_config.cyliner_point_num) 
+    {
+        // std::cerr << "Not found the cylinder！" << std::endl;
+        source.is_cylinder_ = false;
+        return false;
+    }
+    // extract the cylinder points (inlier)
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cylinder_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    for(int i=0; i<inliers->indices.size(); i++)
+    {
+        pcl::PointXYZ pi;
+        pi = source.points_.points[inliers->indices[i]];
+        cylinder_cloud->push_back(pi);
+    }
+    // std::cout << "1-source.points_: " << source.points_.size() << std::endl;
+    // update the information of cluster
+    source.points_ = *cylinder_cloud;
+    source.cylinder_coff = *coefficients;
+    source.is_cylinder_ = true;
+    // std::cout << "2-source.points_: " << source.points_.size() << std::endl;
+    return true;
+}
+
+// fit the trunk by PCL ransac (circle)
+bool pcl_ransac_circle(pcl::PointCloud<pcl::PointXYZ>& source, 
+                       pcl::ModelCoefficients& coff, 
+                       circleConfig& fitting_config)
+{
+    if(source.size() < fitting_config.circle_point_num)
+    {
+        return false;
+    }
+    
+    // pcl::PointXYZ convert to XYZ format
+    pcl::PointCloud<pcl::PointXYZ>::Ptr tmp_points(new pcl::PointCloud<pcl::PointXYZ>());
+    for(int i=0; i<source.size(); i++)
+    {
+        pcl::PointXYZ pi;
+        pi.x = source.points[i].x;
+        pi.y = source.points[i].y;
+        pi.z = source.points[i].z;
+        
+        tmp_points->push_back(pi);
+    }
+
+    // pcl::SampleConsensusModelCircle2D<pcl::PointXYZ>::Ptr model(
+    //     new pcl::SampleConsensusModelCircle2D<pcl::PointXYZ>(tmp_points));
+    
+    // find a circle model (in XY plane)
+    pcl::SACSegmentation<pcl::PointXYZ> seg;
+    seg.setModelType(pcl::SACMODEL_CIRCLE2D);
+    seg.setMethodType(pcl::SAC_RANSAC);
+    seg.setMaxIterations(fitting_config.circle_iteration_num);
+    seg.setDistanceThreshold(fitting_config.circle_model_dist_thres);
+    seg.setRadiusLimits(fitting_config.circle_min_radius, fitting_config.circle_max_radius);
+    seg.setInputCloud(tmp_points);
+    seg.setOptimizeCoefficients(fitting_config.is_opti_coeff);
+    // perform the segment
+    pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
+    pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
+    seg.segment(*inliers, *coefficients);
+
+    if (inliers->indices.size() < 0.5*fitting_config.circle_point_num) 
+    {
+        // std::cerr << "Not found the cylinder！" << std::endl;
+        return false;
+    }
+    
+    // get the circle coefficients
+    coff = *coefficients;
+    return true;
 }
 
 // transfromation type
