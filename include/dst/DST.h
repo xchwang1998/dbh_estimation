@@ -35,7 +35,7 @@ typedef struct ConfigSetting {
 	int rigidness = 3;
 	double time_step = 0.65;
 	double class_threshold = 0.5;
-	int interations = 500;  
+	int iterations = 500;  
 
 	// for FEC Cluster
 	int min_component_size = 50;

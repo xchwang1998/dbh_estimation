@@ -14,6 +14,13 @@
 #include "liblas/point.hpp"
 #include "boost/regex.hpp"
 
+// pcl
+#include <pcl/io/pcd_io.h>
+#include <pcl/point_types.h>
+
+// CSF
+#include "CSF.h"
+
 // OpenCV
 #include "opencv2/core.hpp"
 
@@ -61,6 +68,20 @@ long ArrayMax(const int *pnIn, const long lEle_Num);
 
 // read the parameters from yaml file 
 void ReadParas(const std::string& file_path, ConfigSetting &config_setting);
+
+void ReadPCD(const std::string& file_path, pcl::PointCloud<pcl::PointXYZ>::Ptr pcd_data);
+
+// spereate the ground points, selected the points by index
+void addPointCloud(const std::vector<int>& index_vec, 
+                   const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, 
+                   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered);
+
+// CSF, set the parameters, and get the indices of ground and object
+void clothSimulationFilter(pcl::PointCloud<pcl::PointXYZ>::Ptr input_cloud,
+						   pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_ground,
+						   pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_obj,
+                           ConfigSetting &config_setting);
+
 
 // split the line into string
 std::vector<std::string> split(std::string str,std::string s);

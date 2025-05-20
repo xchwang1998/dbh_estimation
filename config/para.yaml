@@ -1,7 +1,7 @@
 %YAML:1.0
 
 # data path
-pcd_data: /media/xiaochen/xch_disk/TreeScope_dataset/icra_challenge/development_phase/VAT-0723M-05.pcd
+pcd_data: /media/xiaochen/xch_disk/TreeScope_dataset/icra_challenge/development_phase/VAT-1022-A6.pcd
 
 # for FEC cluster
 min_component_size: 10000
@@ -21,12 +21,10 @@ descriptor_min_len: 2
 descriptor_max_len: 50
 side_resolution: 0.1
 
-# for the registration
-candidate_num: 50
-rough_dis_threshold: 0.03
-vertex_diff_threshold: 0
-icp_threshold: 0.0
-dist_candi_frames_verify: 1
-normal_geo_verify: 1
-dis_geo_verify: 0.3
-use_matched_num: 4000
+# parameters for CSF
+bSloopSmooth: 0             # sloop smooth
+cloth_resolution: 0.5           # cloth resolution
+rigidness: 1                    # rigidness of cloth, 1: soft; 2: midle; 3: rigid
+time_step: 0.65                 # step
+class_threshold: 0.5            # ooint height threshold to ground 
+iterations: 200                 # max iteration

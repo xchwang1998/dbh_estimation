@@ -26,6 +26,16 @@ int main(int argc, char **argv)
     // read the setting parameters
     ConfigSetting config_setting;
     ReadParas(data_path+"/config/para.yaml", config_setting);
+    
+    pcl::PointCloud<pcl::PointXYZ>::Ptr input_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    ReadPCD(config_setting.pcd_data, input_cloud);
 
+    pcl::PointCloud<pcl::PointXYZ>::Ptr ground_points(new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr tree_points(new pcl::PointCloud<pcl::PointXYZ>);
+    clothSimulationFilter(input_cloud, ground_points, tree_points, config_setting);
+
+    std::cout << "ground_points: " << ground_points->size() << std::endl;
+    std::cout << "tree_points: " << tree_points->size() << std::endl;
+    
     return 0;
 }

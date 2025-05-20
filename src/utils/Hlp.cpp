@@ -281,8 +281,98 @@ void ReadParas(const std::string& file_path, ConfigSetting &config_setting)
 	std::cout << "clusterHeight: " << config_setting.clusterHeight << std::endl;
 	std::cout << "centerSelection: " << config_setting.centerSelection << std::endl;
 
+
+	// config_setting.bSloopSmooth = (bool)fs["bSloopSmooth"];
+	fs["bSloopSmooth"] >> config_setting.bSloopSmooth;
+	config_setting.cloth_resolution = (double)fs["cloth_resolution"];
+	config_setting.rigidness = (int)fs["rigidness"];
+	config_setting.time_step = (double)fs["time_step"];
+	config_setting.class_threshold = (double)fs["class_threshold"];
+	config_setting.iterations = (int)fs["iterations"];
+	
+	std::cout << BOLDBLUE << "-----------Read Parameters for CSF-----------" << RESET << std::endl;
+	std::cout << "bSloopSmooth: " << config_setting.bSloopSmooth << std::endl;
+	std::cout << "cloth_resolution: " << config_setting.cloth_resolution << std::endl;
+	std::cout << "rigidness: " << config_setting.rigidness << std::endl;
+	std::cout << "time_step: " << config_setting.time_step << std::endl;
+	std::cout << "class_threshold: " << config_setting.class_threshold << std::endl;
+	std::cout << "iterations: " << config_setting.iterations << std::endl;
 }
 
+void ReadPCD(const std::string& file_path, pcl::PointCloud<pcl::PointXYZ>::Ptr pcd_data)
+{
+	if (pcl::io::loadPCDFile<pcl::PointXYZ>(file_path, *pcd_data) == -1) 
+	{
+		std::cerr << "Error: Could not read PCD file: " << file_path << std::endl;
+		return;
+    }
+	std::cout << "Loaded PCD file: " << file_path << std::endl;
+	std::cout << pcd_data->size() << " points in this file!" << std::endl;
+}
+
+
+// spereate the ground points, selected the points by index
+void addPointCloud(const std::vector<int>& index_vec, 
+                   const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, 
+                   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered)
+{
+	auto& points = cloud_filtered->points;
+	const auto& pointclouds = cloud->points;
+
+	for_each(index_vec.begin(), index_vec.end(), [&](const auto& index) {
+		pcl::PointXYZ pc;
+		pc.x = pointclouds[index].x;
+		pc.y = pointclouds[index].y;
+		pc.z = pointclouds[index].z;
+		// pc.intensity = pointclouds[index].intensity;
+
+		points.push_back(pc);
+	});
+
+	cloud_filtered->height = 1;
+	cloud_filtered->width = cloud_filtered->points.size();
+}
+
+// CSF, set the parameters, and get the indices of ground and object
+void clothSimulationFilter(pcl::PointCloud<pcl::PointXYZ>::Ptr input_cloud,
+						   pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_ground,
+						   pcl::PointCloud<pcl::PointXYZ>::Ptr &cloud_obj,
+                           ConfigSetting &config_setting)
+{
+
+	// new csf
+	CSF csf;
+	std::vector<int> groundIndexes;
+	std::vector<int> offGroundIndexes;
+
+	//step 1 read point cloud
+	std::vector<csf::Point> pc;
+	const auto& pointclouds = input_cloud->points;
+    pc.resize(input_cloud->size());
+    transform(pointclouds.begin(), pointclouds.end(), pc.begin(), [&](const auto& p)->csf::Point {
+        csf::Point pp;
+        pp.x = p.x;
+        pp.y = p.y;
+        pp.z = p.z;
+        return pp;
+    });	
+	csf.setPointCloud(pc);// or csf.readPointsFromFile(pointClouds_filepath); 
+	
+    //step 2 parameter settings
+	csf.params.bSloopSmooth = config_setting.bSloopSmooth;
+	csf.params.cloth_resolution = config_setting.cloth_resolution;
+	csf.params.rigidness = config_setting.rigidness;
+
+	csf.params.time_step = config_setting.time_step;
+	csf.params.class_threshold = config_setting.class_threshold;
+	csf.params.interations = config_setting.iterations;
+
+	//step 3 do filtering
+	csf.do_filtering(groundIndexes, offGroundIndexes);
+
+	addPointCloud(groundIndexes, input_cloud, cloud_ground);
+    addPointCloud(offGroundIndexes, input_cloud, cloud_obj);
+}
 
 // transfromation type
 void matrix_to_pair(Eigen::Matrix4f &trans_matrix,
