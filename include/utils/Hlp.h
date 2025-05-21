@@ -39,6 +39,10 @@
 // OpenCV
 #include "opencv2/core.hpp"
 
+// json file 
+#include "../include/utils/json.hpp"
+
+
 #ifndef _DST_H_Included_
 #define _DST_H_Included_
 #include "../include/dst/DST.h"
@@ -104,11 +108,51 @@ void point_to_XY(typename pcl::PointCloud<T>::Ptr &source, pcl::PointCloud<pcl::
     }
 }
 
+template<typename T>
+double horiDist(T p1, T p2)
+{
+    double d = 0;
+    
+    double dx = p1.x - p2.x;
+    double dy = p1.y - p2.y;
+    d = sqrt(dx*dx + dy*dy);
+    return d;
+}
+
+// calculate the angle difference between two vectors
+double angleBetweenVectors(Eigen::Vector3d v1, Eigen::Vector3d v2);
+
+// difference between two normal vectors (input data should have tree elements)
+template<typename T1, typename T2>
+double pointNormalVectorDiff(T1 n1, T2 n2)
+{
+    Eigen::Vector3d v1;
+    Eigen::Vector3d v2;
+
+    v1[0] = n1[0];
+    v1[1] = n1[1];
+    v1[2] = n1[2];
+
+    v2[0] = n2[0];
+    v2[1] = n2[1];
+    v2[2] = n2[2];
+
+    double angle;
+    angle = angleBetweenVectors(v1, v2);
+    
+    return angle;
+}
 
 // read the parameters from yaml file 
-void ReadParas(const std::string& file_path, ConfigSetting &config_setting);
+void ReadParas(const std::string& file_path, 
+				ConfigSetting &config_setting, 
+				cylinderConfig &cy_setting,
+				circleConfig &circle_setting);
 
 void ReadPCD(const std::string& file_path, pcl::PointCloud<pcl::PointXYZ>::Ptr pcd_data);
+
+void ReadJson(const std::string& file_path,
+			   std::vector<std::pair<std::string, std::pair<double, double>>>& points);
 
 // spereate the ground points, selected the points by index
 void addPointCloud(const std::vector<int>& index_vec, 
@@ -128,38 +172,50 @@ void sor_filter_noise(pcl::PointCloud<pcl::PointXYZ>::Ptr &source,
 
 void stem_above_ground(pcl::PointCloud<pcl::PointXYZ>::Ptr &tree_points, 
 						pcl::PointCloud<pcl::PointXYZ>::Ptr &ground_points,
-						pcl::PointCloud<pcl::PointXYZ>::Ptr &croped_tree);
-
-void estimateNormals(
-    const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,
-    pcl::PointCloud<pcl::Normal>::Ptr& normals,
-    double radius);
+						pcl::PointCloud<pcl::PointXYZ>::Ptr &croped_tree,
+						ConfigSetting &config_setting);
 
 // FEC cluster, get the cluster points
 void fec_cluster(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, 
-                 std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> &cluster_points_,
+                 std::vector<pcl::PointCloud<pcl::PointXYZ>> &cluster_points_,
                  ConfigSetting &config_setting);
 
 void pcl_cluster(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, 
-                 std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> &cluster_points_,
+                 std::vector<pcl::PointCloud<pcl::PointXYZ>> &cluster_points_,
                  ConfigSetting &config_setting);
 
 // calculate the attributes of each cluster, then select the trunk
-void cluster_attributes(std::vector<Cluster> &clusters,
-                        std::vector<Cluster> &disgard_clusters,
-                        std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> &cluster_points_,
-                        ConfigSetting &config_setting);
+// calculate the cluster geometry
+void getClusterGeometry(std::vector<pcl::PointCloud<pcl::PointXYZ>> clusterPoints, std::vector<Cluster>& clusters);
+
+void calculateGeometry(pcl::PointCloud<pcl::PointXYZ> clusterPoints, Cluster& cluster);
+
+void getClusterCenters2D(std::vector<Cluster>& clusters, pcl::PointCloud<pcl::PointXY>::Ptr& centers);
+
+// direct add cluster
+void addClusters(Cluster& cluster1, Cluster& cluster2);
+
+// optimize the cluster vector
+void optiClusters(std::vector<Cluster>& totalClusters, ConfigSetting &config_setting);
+
+// fit the cylinders of frame or total cloud
+void clusterFit(std::vector<pcl::PointCloud<pcl::PointXYZ>> &cluster_points_, 
+			std::vector<Cluster>& clustersData, cylinderConfig& fitting_config);
 
 // from cluster points to a whole point cloud
 void clusterTopoints(std::vector<Cluster>& clusters, pcl::PointCloud<pcl::PointXYZRGBL>::Ptr& points);
-
-// fit the trunk by PCL ransac (cylinder)
-bool pcl_ransac_cylinder(Cluster& source, cylinderConfig& fitting_config);
 
 // fit the trunk by PCL ransac (circle)
 bool pcl_ransac_circle(pcl::PointCloud<pcl::PointXYZ>& source, 
                        pcl::ModelCoefficients& coff, 
                        circleConfig& fitting_config);
+
+// calculate the DBH of stem
+void calculateDBH(std::vector<Cluster>& clusters, circleConfig& fitting_config);
+
+bool fitCylinder(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud,
+                 Cluster& source,
+                 cylinderConfig& fitting_config);
 
 // split the line into string
 std::vector<std::string> split(std::string str,std::string s);
@@ -175,6 +231,12 @@ void point_to_vector(pcl::PointCloud<pcl::PointXYZ>::Ptr &pclPoints,
 void down_sampling_voxel(pcl::PointCloud<pcl::PointXYZ> &pl_feat,
                          double voxel_size);
 
+// get ground height of current clusters
+void clusterGndHeight(std::vector<Cluster>& clustersData, pcl::PointCloud<pcl::PointXYZ>::Ptr tmp_gnd_data);
+
+
+void getDBHInfo(std::vector<Cluster>& clustersData, 
+				std::vector<std::pair<std::string, std::pair<double, double>>> search_points);
 
 //============the following are UBUNTU/LINUX ONLY terminal color codes.==========
 #define RESET   "\033[0m"

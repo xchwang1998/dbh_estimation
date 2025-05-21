@@ -28,7 +28,8 @@ struct ProfLabel
 typedef struct ConfigSetting {
 	
   std::string pcd_data = "/media/xiaochen/xch_disk/TreeScope_dataset/";
-
+  std::string json_data = "/media/xiaochen/xch_disk/TreeScope_dataset/";
+  
 	// for CSF, ground filter
 	bool bSloopSmooth = false;
 	double cloth_resolution = 0.5;
@@ -48,18 +49,18 @@ typedef struct ConfigSetting {
 	double gnd_points_num = 5;
 	double gnd_points_dist = 0.5;
 	
-	// to disguish the cluster type
-	double linearityThres = 0.95;
-  double upThres = 0.3;
-	double scateringThres = 0.05;
+	// for cluster constraint
+  int clusterPointsNum = 100;
+  double linearThres = 0.7;
+  double planarThres = 0.3;
+  double scaterThres = 0.3;
+  double directThres = 0.7;
+  double heightThres = 2.0;
+  double horizonThres = 5.0;
 
-  double clusterHeight = 2.5;
-  int centerSelection = 0;
-
-	// for plane selection
-	int pointsNumThres = 10;
-	double planarityThres = 0.7;
-
+  // crop tree points
+  double min_height = 0.1;
+  double max_height = 2.0;
 } ConfigSetting;
 
 // for point to image
@@ -73,6 +74,7 @@ typedef struct Cluster {
   int label;
   pcl::PointXYZINormal p_center_;
   pcl::PointCloud<pcl::PointXYZ> points_;
+  pcl::PointCloud<pcl::PointXYZINormal> point_normal_;
   Eigen::Vector3d center_;
   Eigen::Vector3d normal_;
   Eigen::Matrix3d covariance_;
@@ -80,11 +82,11 @@ typedef struct Cluster {
   double minZ;
   double maxZ;
   double root;
+  
   double linearity_ = 0;
   double planarity_ = 0;
   double scatering_ = 0;
-  bool is_plane_ = false;
-  bool is_line_ = false;
+
 
   bool is_cylinder_ = false;
   pcl::ModelCoefficients cylinder_coff;
@@ -92,16 +94,20 @@ typedef struct Cluster {
   bool dbh_flag = false;
   pcl::ModelCoefficients dbh_coff;
 
+  Eigen::Vector3d min_point;
+  Eigen::Vector3d max_point;
+  double gnd_height = 0;
+  std::vector<int> rgb;
 } Cluster;
 
 // fitting cylinder parameters
 typedef struct cylinderConfig {
-    int cyliner_point_num;
-    double model_dist_thres;
-    int iteration_num;
-    double min_radius;
-    double max_radius;
-    bool is_opti_cylinder_coeff;
+    int cyliner_point_num = 50;
+    double model_dist_thres = 0.2;
+    int iteration_num = 2000;
+    double min_radius = 1;
+    double max_radius = 0.025;
+    bool is_opti_cylinder_coeff = true;
 } cylinderConfig;
 
 // fitting circle parameters
